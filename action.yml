@@ -101,6 +101,7 @@ runs:
         "$vmd_executable" -dispdev text \
           -e "$ACTION_DIRECTORY/run_profiler.tcl" \
           -args \
+          "$ACTION_DIRECTORY/tcl_profiler.tcl" \
           "$benchmark_script" \
           "$INPUT_REPETITIONS" \
           "$INPUT_WARMUPS" \
