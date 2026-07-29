@@ -6,6 +6,11 @@ inputs:
     description: Path to the user-supplied Tcl benchmark script
     required: true
 
+  working-directory:
+    description: Path, relative to the GitHub workspace, containing the software to profile
+    required: false
+    default: "."
+
   repetitions:
     description: Number of measured repetitions
     required: false
@@ -17,17 +22,17 @@ inputs:
     default: "1"
 
   output:
-    description: Output filename without the .csv extension
+    description: Output path, relative to the GitHub workspace, without a file extension
     required: false
     default: "timing_results"
 
 outputs:
   csv-file:
-    description: Path to the generated CSV file
+    description: Absolute path to the generated CSV file
     value: ${{ steps.profile.outputs.csv-file }}
 
   txt-file:
-    description: Path to the human-readable timing report
+    description: Absolute path to the human-readable timing report
     value: ${{ steps.profile.outputs.txt-file }}
 
 runs:
@@ -37,18 +42,82 @@ runs:
       name: Profile Tcl procedures
       shell: bash
       env:
-        PROFILER_SCRIPT: ${{ inputs.script }}
-        PROFILER_REPETITIONS: ${{ inputs.repetitions }}
-        PROFILER_WARMUPS: ${{ inputs.warmup-runs }}
-        PROFILER_OUTPUT: ${{ inputs.output }}
+        ACTION_DIRECTORY: ${{ github.action_path }}
+        INPUT_WORKING_DIRECTORY: ${{ inputs.working-directory }}
+        INPUT_SCRIPT: ${{ inputs.script }}
+        INPUT_REPETITIONS: ${{ inputs.repetitions }}
+        INPUT_WARMUPS: ${{ inputs.warmup-runs }}
+        INPUT_OUTPUT: ${{ inputs.output }}
       run: |
-        vmd -dispdev text \
-          -e "${{ github.action_path }}/run_profiler.tcl" \
-          -args \
-          "$PROFILER_SCRIPT" \
-          "$PROFILER_REPETITIONS" \
-          "$PROFILER_WARMUPS" \
-          "$PROFILER_OUTPUT"
+        # Make sure vmd is installed/useable
+        if ! vmd_executable="$(command -v vmd)"; then
+          echo "::error title=VMD not found::The 'vmd' command is not available on PATH. Install or configure VMD before running this action."
+          exit 127
+        fi
+        echo "Using VMD executable: $vmd_executable"
 
-        echo "csv-file=${PROFILER_OUTPUT}.csv" >> "$GITHUB_OUTPUT"
-        echo "txt-file=${PROFILER_OUTPUT}.txt" >> "$GITHUB_OUTPUT"
+        # Resolve the software checkout.
+        if [[ "$INPUT_WORKING_DIRECTORY" = /* ]]; then
+          software_directory="$INPUT_WORKING_DIRECTORY"
+        else
+          software_directory="$GITHUB_WORKSPACE/$INPUT_WORKING_DIRECTORY"
+        fi
+
+        if [[ ! -d "$software_directory" ]]; then
+          echo "::error title=Working directory not found::Directory does not exist: $software_directory"
+          exit 1
+        fi
+
+        software_directory="$(cd "$software_directory" && pwd -P)"
+
+        # Resolve the user-provided benchmark script relative to the
+        # selected software checkout.
+        if [[ "$INPUT_SCRIPT" = /* ]]; then
+          benchmark_script="$INPUT_SCRIPT"
+        else
+          benchmark_script="$software_directory/$INPUT_SCRIPT"
+        fi
+
+        if [[ ! -f "$benchmark_script" ]]; then
+          echo "::error title=Benchmark script not found::File does not exist: $benchmark_script"
+          exit 1
+        fi
+
+        benchmark_script="$(realpath "$benchmark_script")"
+
+        # Store output outside the base and feature source checkouts.
+        if [[ "$INPUT_OUTPUT" = /* ]]; then
+          output_base="$INPUT_OUTPUT"
+        else
+          output_base="$GITHUB_WORKSPACE/$INPUT_OUTPUT"
+        fi
+
+        mkdir -p "$(dirname "$output_base")"
+
+        # This makes relative paths in the user's benchmark script resolve
+        # from the selected software checkout.
+        cd "$software_directory"
+
+        "$vmd_executable" -dispdev text \
+          -e "$ACTION_DIRECTORY/run_profiler.tcl" \
+          -args \
+          "$benchmark_script" \
+          "$INPUT_REPETITIONS" \
+          "$INPUT_WARMUPS" \
+          "$output_base"
+
+        csv_file="${output_base}.csv"
+        txt_file="${output_base}.txt"
+
+        if [[ ! -f "$csv_file" ]]; then
+          echo "::error title=CSV output missing::The profiler did not create: $csv_file"
+          exit 1
+        fi
+
+        if [[ ! -f "$txt_file" ]]; then
+          echo "::error title=Text output missing::The profiler did not create: $txt_file"
+          exit 1
+        fi
+
+        echo "csv-file=$csv_file" >> "$GITHUB_OUTPUT"
+        echo "txt-file=$txt_file" >> "$GITHUB_OUTPUT"
