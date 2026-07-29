@@ -13,11 +13,40 @@ if {![string is integer -strict $warmupRuns] || $warmupRuns < 0} {
     exit 1
 }
 
+proc ReportProfilerError {outputName message} {
+    set errorFile "${outputName}.error.txt"
+
+    set channel [open $errorFile w]
+    puts $channel $message
+    close $channel
+
+    puts stderr "TIME_PROFILER_ERROR: $message"
+    quit
+}
+
 set TimeProfilerMode 1
 source [file join [file dirname [info script]] tcl_profiler.tcl]
 
 # The user script sources their software and defines RunBenchmark.
-source $userScript
+set sourceStatus [catch {
+    source $userScript
+} sourceMessage sourceOptions]
+
+if {$sourceStatus != 0} {
+    set details $sourceMessage
+
+    if {[dict exists $sourceOptions -errorinfo]} {
+        append details "\n" [dict get $sourceOptions -errorinfo]
+    }
+
+    ReportProfilerError $outputName \
+        "Failed to source benchmark script:\n$details"
+}
+
+if {[llength [info commands ::RunBenchmark]] == 0} {
+    ReportProfilerError $outputName \
+        "The benchmark script '$userScript' does not define a global RunBenchmark procedure."
+}
 
 if {[llength [info commands RunBenchmark]] == 0} {
     puts stderr \

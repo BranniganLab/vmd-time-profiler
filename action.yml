@@ -106,8 +106,15 @@ runs:
           "$INPUT_WARMUPS" \
           "$output_base"
 
+        error_file="${output_base}.error.txt"
         csv_file="${output_base}.csv"
         txt_file="${output_base}.txt"
+
+        if [[ -f "$error_file" ]]; then
+          error_message="$(cat "$error_file")"
+          echo "::error title=VMD profiler failed::$error_message"
+          exit 1
+        fi
 
         if [[ ! -f "$csv_file" ]]; then
           echo "::error title=CSV output missing::The profiler did not create: $csv_file"
