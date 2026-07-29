@@ -25,7 +25,9 @@ proc ReportProfilerError {outputName message} {
 }
 
 set TimeProfilerMode 1
-source [file join [file dirname [info script]] tcl_profiler.tcl]
+
+set actionDirectory [file dirname [file normalize [info script]]]
+set profilerFile [file join $actionDirectory tcl_profiler.tcl]
 
 # The user script sources their software and defines RunBenchmark.
 set sourceStatus [catch {
