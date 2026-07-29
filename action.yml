@@ -1,0 +1,54 @@
+name: VMD Tcl Time Profiler
+description: Profile Tcl procedures executed inside VMD
+
+inputs:
+  script:
+    description: Path to the user-supplied Tcl benchmark script
+    required: true
+
+  repetitions:
+    description: Number of measured repetitions
+    required: false
+    default: "10"
+
+  warmup-runs:
+    description: Number of unmeasured warm-up repetitions
+    required: false
+    default: "1"
+
+  output:
+    description: Output filename without the .csv extension
+    required: false
+    default: "timing_results"
+
+outputs:
+  csv-file:
+    description: Path to the generated CSV file
+    value: ${{ steps.profile.outputs.csv-file }}
+
+  txt-file:
+    description: Path to the human-readable timing report
+    value: ${{ steps.profile.outputs.txt-file }}
+
+runs:
+  using: composite
+  steps:
+    - id: profile
+      name: Profile Tcl procedures
+      shell: bash
+      env:
+        PROFILER_SCRIPT: ${{ inputs.script }}
+        PROFILER_REPETITIONS: ${{ inputs.repetitions }}
+        PROFILER_WARMUPS: ${{ inputs.warmup-runs }}
+        PROFILER_OUTPUT: ${{ inputs.output }}
+      run: |
+        vmd -dispdev text \
+          -e "${{ github.action_path }}/run_profiler.tcl" \
+          -args \
+          "$PROFILER_SCRIPT" \
+          "$PROFILER_REPETITIONS" \
+          "$PROFILER_WARMUPS" \
+          "$PROFILER_OUTPUT"
+
+        echo "csv-file=${PROFILER_OUTPUT}.csv" >> "$GITHUB_OUTPUT"
+        echo "txt-file=${PROFILER_OUTPUT}.txt" >> "$GITHUB_OUTPUT"
