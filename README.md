@@ -42,31 +42,40 @@ For example:
 ```tcl
 # test_files/benchmark/run_benchmark.tcl
 
-set benchmarkDirectory \
-    [file dirname [file normalize [info script]]]
-set repositoryRoot \
-    [file normalize [file join $benchmarkDirectory .. ..]]
+set cwd [file dirname [file normalize [info script]]]
 
-source [file join $repositoryRoot TCL analysis.tcl]
+source [file join $cwd <RELATIVE PATH TO CODE YOU WANT TO SOURCE>]
 
 # One-time setup is not included in the measured runs.
-mol new [file join $repositoryRoot test_files system.gro]
-mol addfile \
-    [file join $repositoryRoot test_files trajectory.xtc] \
-    waitfor all
-
-set benchmarkConfig \
-    [file join $benchmarkDirectory benchmark_config.tcl]
+mol new [file join $cwd <RELATIVE PATH TO PDB/GRO>]
+mol addfile [file join $cwd <RELATIVE PATH TO XTC/DCD>] waitfor all
 
 proc RunBenchmark {} {
-    global benchmarkConfig
-
-    run_analysis $benchmarkConfig
+    <THE COMMANDS YOU WANT TO PROFILE>
 }
 ```
 
-Top-level variables used inside `RunBenchmark` must be declared with `global`,
-as shown above.
+To access variables inside `RunBenchmark`, declare them and then call them
+with `global`, as shown below:
+
+```tcl
+# test_files/benchmark/run_benchmark.tcl
+
+set cwd [file dirname [file normalize [info script]]]
+
+source [file join $cwd <RELATIVE PATH TO CODE YOU WANT TO SOURCE>]
+
+# One-time setup is not included in the measured runs.
+mol new [file join $cwd <RELATIVE PATH TO PDB/GRO>]
+mol addfile [file join $cwd <RELATIVE PATH TO XTC/DCD>] waitfor all
+
+set configPath [file join $cwd <RELATIVE PATH TO CONFIG FILE>]
+
+proc RunBenchmark {} {
+    global configPath
+    <THE COMMANDS YOU WANT TO PROFILE> $configPath
+}
+```
 
 ### Repeated-run behavior
 
@@ -83,32 +92,46 @@ Each repetition should perform an equivalent workload.
 The following workflow assumes that VMD has already been added to `PATH`:
 
 ```yaml
-name: VMD time profile
-
-on:
-  workflow_dispatch:
-
 jobs:
-  profile:
+  time-profile:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@v6
 
-      - name: Install or configure VMD
+      - name: Install build dependencies
         run: |
-          # Make the `vmd` command available on PATH here.
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            libx11-dev \
+            libglu1-mesa-dev \
+            libxi-dev \
+            libxext-dev \
+            libxmu-dev \
+            libjpeg-dev \
+            libpng-dev \
+            tcl-dev \
+            tk-dev \
+            python3-dev \
+            flex \
+            bison \
+            git
+
+      - name: Set up VMD
+        id: setup-vmd
+        uses: BranniganLab/setup-vmd@ae464c279176585de8a94bd7c7bd11eee4da5783
+        with:
+          github-app-id: ${{ secrets.GH_APP_ID }}
+          github-app-private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
 
       - name: Run time profiler
         id: profiler
-        uses: BranniganLab/vmd-time-profiler@v1
+        uses: BranniganLab/vmd-time-profiler@v2
         with:
-          working-directory: .
           script: test_files/benchmark/run_benchmark.tcl
           repetitions: 10
           warmup-runs: 1
-          output: results/timing_results
 
       - name: Upload timing reports
         uses: actions/upload-artifact@v6
